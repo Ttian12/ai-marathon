@@ -3,9 +3,10 @@ import * as Y from 'yjs'
 import { WebsocketProvider } from 'y-websocket'
 import { QuillBinding } from 'y-quill'
 import Quill from 'quill'
-import 'quill/dist/quill.snow.css'
-import { Users, Wifi, WifiOff } from 'lucide-react'
 import QuillCursors from 'quill-cursors'
+import 'quill/dist/quill.snow.css'
+import 'quill-cursors/css'
+import { Users, Wifi, WifiOff } from 'lucide-react'
 
 Quill.register('modules/cursors', QuillCursors)
 
@@ -28,7 +29,7 @@ const App: React.FC = () => {
   const [userList, setUserList] = useState<UserInfo[]>([])
   const [status, setStatus] = useState<'connected' | 'disconnected'>('disconnected')
   const [notifications, setNotifications] = useState<Notification[]>([])
-  const prevClientsRef = useRef<Set<number>>(new Set())
+  const prevStatesRef = useRef<Map<number, any>>(new Map())
 
   const docName = useMemo(() => {
     return new URLSearchParams(window.location.search).get('doc') || 'collaborative-doc'
@@ -52,10 +53,12 @@ const App: React.FC = () => {
       ydoc
     )
 
+    const awareness = provider.awareness
+
     provider.on('status', (event: { status: string }) => {
       setStatus(event.status as 'connected' | 'disconnected')
       if (event.status === 'connected') {
-        provider.awareness.setLocalStateField('user', currentUser)
+        awareness.setLocalStateField('user', currentUser)
       }
     })
 
@@ -78,8 +81,7 @@ const App: React.FC = () => {
     })
     quillRef.current = quill
     ;(window as any).__quill = quill
-
-    const awareness = provider.awareness
+    ;(window as any).quill = quill
 
     const pushNotification = (msg: string) => {
       const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`
@@ -92,40 +94,46 @@ const App: React.FC = () => {
     const syncPresence = () => {
       const states = awareness.getStates()
       const users: UserInfo[] = []
-      const currentClients = new Set<number>()
 
-      for (const [clientId, state] of states.entries()) {
-        currentClients.add(clientId)
+      for (const state of states.values()) {
         if (state?.user) users.push(state.user as UserInfo)
       }
 
-      for (const clientId of currentClients) {
-        if (!prevClientsRef.current.has(clientId)) {
-          const u = states.get(clientId)?.user as UserInfo | undefined
-          if (u) pushNotification(`${u.name} 已加入`)
-        }
-      }
-
-      for (const clientId of prevClientsRef.current) {
-        if (!currentClients.has(clientId)) {
-          pushNotification(`用户已离开`)
-        }
-      }
-
-      prevClientsRef.current = currentClients
       setUserList(users)
       setOnlineUsers(users.length || 1)
     }
 
+    const onAwarenessChange = (changes: { added: number[]; updated: number[]; removed: number[] }) => {
+      const states = awareness.getStates()
+
+      for (const clientId of changes.added) {
+        if (clientId === awareness.clientID) continue
+        const u = states.get(clientId)?.user as UserInfo | undefined
+        if (u) pushNotification(`${u.name} 已加入`)
+      }
+
+      for (const clientId of changes.removed) {
+        if (clientId === awareness.clientID) continue
+        const prev = prevStatesRef.current.get(clientId)?.user as UserInfo | undefined
+        if (prev?.name) pushNotification(`${prev.name} 已离开`)
+        else pushNotification('用户已离开')
+      }
+
+      prevStatesRef.current = new Map(states)
+      syncPresence()
+    }
+
     awareness.setLocalStateField('user', currentUser)
+    prevStatesRef.current = new Map(awareness.getStates())
     syncPresence()
-    awareness.on('change', syncPresence)
+    awareness.on('change', onAwarenessChange)
 
     const type = ydoc.getText('quill')
     const binding = new QuillBinding(type, quill, awareness)
 
     return () => {
       binding.destroy()
+      awareness.off('change', onAwarenessChange)
       provider.destroy()
       ydoc.destroy()
     }
@@ -135,11 +143,12 @@ const App: React.FC = () => {
     <div className="min-h-screen flex flex-col bg-gray-100">
       <div className="fixed top-4 right-4 z-50 space-y-2">
         {notifications.map(n => (
-          <div key={n.id} className="bg-white border shadow-sm rounded-md px-4 py-2 text-sm text-gray-700">
+          <div key={n.id} className="notification-toast bg-white border shadow-sm rounded-md px-4 py-2 text-sm text-gray-700">
             {n.msg}
           </div>
         ))}
       </div>
+
       <header className="flex items-center justify-between px-6 py-4 border-b bg-white shadow-sm">
         <h1 className="text-xl font-bold text-gray-800">实时协作文档</h1>
         
@@ -165,6 +174,14 @@ const App: React.FC = () => {
           <div className="flex items-center text-sm text-gray-600 border-l pl-4">
             <Users size={18} className="mr-2" />
             <span>在线: {onlineUsers}</span>
+          </div>
+
+          <div className="online-users-list hidden">
+            {userList.map((user, idx) => (
+              <span key={idx} className="online-user">
+                {user.name}
+              </span>
+            ))}
           </div>
           
           <div className={`flex items-center text-sm font-medium ${
