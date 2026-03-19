@@ -16,12 +16,23 @@ type UserInfo = {
   color: string
 }
 
+type Notification = {
+  id: string
+  msg: string
+}
+
 const App: React.FC = () => {
   const editorRef = useRef<HTMLDivElement>(null)
   const quillRef = useRef<Quill | null>(null)
   const [onlineUsers, setOnlineUsers] = useState<number>(1)
   const [userList, setUserList] = useState<UserInfo[]>([])
   const [status, setStatus] = useState<'connected' | 'disconnected'>('disconnected')
+  const [notifications, setNotifications] = useState<Notification[]>([])
+  const prevClientsRef = useRef<Set<number>>(new Set())
+
+  const docName = useMemo(() => {
+    return new URLSearchParams(window.location.search).get('doc') || 'collaborative-doc'
+  }, [])
 
   const currentUser = useMemo(() => {
     return {
@@ -37,12 +48,15 @@ const App: React.FC = () => {
 
     const provider = new WebsocketProvider(
       'ws://localhost:1234',
-      'collaborative-doc',
+      docName,
       ydoc
     )
 
     provider.on('status', (event: { status: string }) => {
       setStatus(event.status as 'connected' | 'disconnected')
+      if (event.status === 'connected') {
+        provider.awareness.setLocalStateField('user', currentUser)
+      }
     })
 
     const quill = new Quill(editorRef.current, {
@@ -63,20 +77,49 @@ const App: React.FC = () => {
       },
     })
     quillRef.current = quill
+    ;(window as any).__quill = quill
 
     const awareness = provider.awareness
-    awareness.setLocalStateField('user', currentUser)
 
-    awareness.on('change', () => {
-      const states = Array.from(awareness.getStates().values())
-      
-      const users = states
-        .filter(state => state.user)
-        .map(state => state.user)
-      
+    const pushNotification = (msg: string) => {
+      const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`
+      setNotifications(prev => [...prev, { id, msg }])
+      window.setTimeout(() => {
+        setNotifications(prev => prev.filter(n => n.id !== id))
+      }, 3000)
+    }
+
+    const syncPresence = () => {
+      const states = awareness.getStates()
+      const users: UserInfo[] = []
+      const currentClients = new Set<number>()
+
+      for (const [clientId, state] of states.entries()) {
+        currentClients.add(clientId)
+        if (state?.user) users.push(state.user as UserInfo)
+      }
+
+      for (const clientId of currentClients) {
+        if (!prevClientsRef.current.has(clientId)) {
+          const u = states.get(clientId)?.user as UserInfo | undefined
+          if (u) pushNotification(`${u.name} 已加入`)
+        }
+      }
+
+      for (const clientId of prevClientsRef.current) {
+        if (!currentClients.has(clientId)) {
+          pushNotification(`用户已离开`)
+        }
+      }
+
+      prevClientsRef.current = currentClients
       setUserList(users)
       setOnlineUsers(users.length || 1)
-    })
+    }
+
+    awareness.setLocalStateField('user', currentUser)
+    syncPresence()
+    awareness.on('change', syncPresence)
 
     const type = ydoc.getText('quill')
     const binding = new QuillBinding(type, quill, awareness)
@@ -86,10 +129,17 @@ const App: React.FC = () => {
       provider.destroy()
       ydoc.destroy()
     }
-  }, [currentUser])
+  }, [currentUser, docName])
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-100">
+      <div className="fixed top-4 right-4 z-50 space-y-2">
+        {notifications.map(n => (
+          <div key={n.id} className="bg-white border shadow-sm rounded-md px-4 py-2 text-sm text-gray-700">
+            {n.msg}
+          </div>
+        ))}
+      </div>
       <header className="flex items-center justify-between px-6 py-4 border-b bg-white shadow-sm">
         <h1 className="text-xl font-bold text-gray-800">实时协作文档</h1>
         
