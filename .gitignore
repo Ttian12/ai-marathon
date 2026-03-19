@@ -1,10 +1,11 @@
-# .gitignore
 node_modules/
 dist/
 .env
 .DS_Store
-
-# Backend specific
 yjs-storage/
 *.db
 *.log
+playwright-report/
+test-results/
+frontend/playwright-report/
+frontend/test-results/
