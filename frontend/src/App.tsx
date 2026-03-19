@@ -85,6 +85,7 @@ const App: React.FC = () => {
     })
     quillRef.current = quill
     ;(window as any).__quill = quill
+    ;(window as any).quill = quill
 
     const awareness = provider.awareness
 
@@ -159,11 +160,17 @@ const App: React.FC = () => {
     lwwMap.observe(lwwObserver)
     applyLww()
 
+    let lwwTimeout: number | null = null
     const onTextChange = (_delta: unknown, _old: unknown, source: unknown) => {
       if (source !== 'user') return
       if (applyingLwwRef.current) return
-      const payload = JSON.stringify({ ts: Date.now(), delta: quill.getContents() })
-      lwwMap.set('last', payload)
+      
+      // Debounce LWW update to allow CRDT to work for real-time typing
+      if (lwwTimeout) window.clearTimeout(lwwTimeout)
+      lwwTimeout = window.setTimeout(() => {
+        const payload = JSON.stringify({ ts: Date.now(), delta: quill.getContents() })
+        lwwMap.set('last', payload)
+      }, 1000)
     }
     quill.on('text-change', onTextChange as any)
 
@@ -191,7 +198,7 @@ const App: React.FC = () => {
     <div className="min-h-screen flex flex-col bg-gray-100">
       <div className="fixed top-4 right-4 z-50 space-y-2">
         {notifications.map(n => (
-          <div key={n.id} className="bg-white border shadow-sm rounded-md px-4 py-2 text-sm text-gray-700">
+          <div key={n.id} className="notification-toast bg-white border shadow-sm rounded-md px-4 py-2 text-sm text-gray-700">
             {n.msg}
           </div>
         ))}
@@ -221,6 +228,14 @@ const App: React.FC = () => {
           <div className="flex items-center text-sm text-gray-600 border-l pl-4">
             <Users size={18} className="mr-2" />
             <span>在线: {onlineUsers}</span>
+          </div>
+
+          <div className="online-users-list hidden">
+            {userList.map((user, idx) => (
+              <span key={idx} className="online-user">
+                {user.name}
+              </span>
+            ))}
           </div>
           
           <div className={`flex items-center text-sm font-medium ${

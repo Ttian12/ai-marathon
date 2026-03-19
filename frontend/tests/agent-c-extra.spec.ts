@@ -8,8 +8,8 @@ test.describe('Agent-C Tests: Extra', () => {
     const pageA = await contextA.newPage()
     const pageB = await contextB.newPage()
 
-    await pageA.goto('http://localhost:5175')
-    await pageB.goto('http://localhost:5175')
+    await pageA.goto('/')
+    await pageB.goto('/')
 
     await expect(pageA.getByText('在线', { exact: true })).toBeVisible()
     await expect(pageB.getByText('在线', { exact: true })).toBeVisible()
@@ -41,7 +41,7 @@ test.describe('Agent-C Tests: Extra', () => {
   })
 
   test('Test-D3: Long offline recovery', async ({ page, context }) => {
-    await page.goto('http://localhost:5175')
+    await page.goto('/')
     await expect(page.getByText('在线', { exact: true })).toBeVisible()
 
     await context.setOffline(true)
