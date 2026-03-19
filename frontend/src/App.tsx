@@ -40,6 +40,22 @@ const App: React.FC = () => {
     return new URLSearchParams(window.location.search).get('doc') || 'collaborative-doc'
   }, [])
 
+  const apiOrigin = useMemo(() => {
+    const envOrigin = (import.meta as any).env?.VITE_API_ORIGIN as string | undefined
+    if (envOrigin) return envOrigin
+    const host = window.location.hostname
+    const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:'
+    return `${protocol}//${host}:1234`
+  }, [])
+
+  const wsOrigin = useMemo(() => {
+    const envOrigin = (import.meta as any).env?.VITE_WS_ORIGIN as string | undefined
+    if (envOrigin) return envOrigin
+    const host = window.location.hostname
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    return `${protocol}//${host}:1234`
+  }, [])
+
   const currentUser = useMemo(() => {
     return {
       name: `User-${Math.floor(Math.random() * 1000)}`,
@@ -50,7 +66,7 @@ const App: React.FC = () => {
   const fetchVersions = async () => {
     setIsLoadingHistory(true)
     try {
-      const res = await fetch(`http://localhost:1234/api/versions/${docName}`)
+      const res = await fetch(`${apiOrigin}/api/versions/${docName}`)
       const data = await res.json()
       setVersions(Array.isArray(data) ? data : [])
     } catch (err) {
@@ -62,7 +78,7 @@ const App: React.FC = () => {
 
   const handleRollback = async (id: number) => {
     try {
-      const res = await fetch(`http://localhost:1234/api/rollback/${docName}/${id}`, {
+      const res = await fetch(`${apiOrigin}/api/rollback/${docName}/${id}`, {
         method: 'POST'
       })
       if (res.ok) {
@@ -97,7 +113,7 @@ const App: React.FC = () => {
     indexeddbProvider.on('synced', () => setIsSynced(true))
 
     const provider = new WebsocketProvider(
-      'ws://localhost:1234',
+      wsOrigin,
       docName,
       ydoc
     )
