@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import * as Y from 'yjs'
 import { WebsocketProvider } from 'y-websocket'
+import { IndexeddbPersistence } from 'y-indexeddb'
 import { QuillBinding } from 'y-quill'
 import Quill from 'quill'
 import 'quill/dist/quill.snow.css'
@@ -26,7 +27,9 @@ const App: React.FC = () => {
   const quillRef = useRef<Quill | null>(null)
   const [onlineUsers, setOnlineUsers] = useState<number>(1)
   const [userList, setUserList] = useState<UserInfo[]>([])
-  const [status, setStatus] = useState<'connected' | 'disconnected'>('disconnected')
+  const [wsStatus, setWsStatus] = useState<'connected' | 'disconnected'>('disconnected')
+  const [isBrowserOnline, setIsBrowserOnline] = useState<boolean>(typeof navigator !== 'undefined' ? navigator.onLine : true)
+  const [isSynced, setIsSynced] = useState<boolean>(false)
   const [notifications, setNotifications] = useState<Notification[]>([])
   const prevClientsRef = useRef<Set<number>>(new Set())
 
@@ -45,6 +48,10 @@ const App: React.FC = () => {
     if (!editorRef.current) return
 
     const ydoc = new Y.Doc()
+    
+    // Agent-C: IndexedDB Persistence
+    const indexeddbProvider = new IndexeddbPersistence(docName, ydoc)
+    indexeddbProvider.on('synced', () => setIsSynced(true))
 
     const provider = new WebsocketProvider(
       'ws://localhost:1234',
@@ -53,7 +60,7 @@ const App: React.FC = () => {
     )
 
     provider.on('status', (event: { status: string }) => {
-      setStatus(event.status as 'connected' | 'disconnected')
+      setWsStatus(event.status === 'connected' ? 'connected' : 'disconnected')
       if (event.status === 'connected') {
         provider.awareness.setLocalStateField('user', currentUser)
       }
@@ -124,12 +131,61 @@ const App: React.FC = () => {
     const type = ydoc.getText('quill')
     const binding = new QuillBinding(type, quill, awareness)
 
+    // Agent-C: Last-Write-Wins (LWW) Strategy
+    const lwwMap = ydoc.getMap('lww')
+    const applyingLwwRef = { current: false }
+    const appliedTsRef = { current: 0 }
+
+    const applyLww = () => {
+      const raw = lwwMap.get('last')
+      if (typeof raw !== 'string') return
+      let parsed: { ts: number; delta: unknown } | null = null
+      try {
+        parsed = JSON.parse(raw) as { ts: number; delta: unknown }
+      } catch {
+        parsed = null
+      }
+      if (!parsed || typeof parsed.ts !== 'number' || parsed.ts <= appliedTsRef.current) return
+      applyingLwwRef.current = true
+      try {
+        quill.setContents(parsed.delta as any, 'api')
+        appliedTsRef.current = parsed.ts
+      } finally {
+        applyingLwwRef.current = false
+      }
+    }
+
+    const lwwObserver = () => applyLww()
+    lwwMap.observe(lwwObserver)
+    applyLww()
+
+    const onTextChange = (_delta: unknown, _old: unknown, source: unknown) => {
+      if (source !== 'user') return
+      if (applyingLwwRef.current) return
+      const payload = JSON.stringify({ ts: Date.now(), delta: quill.getContents() })
+      lwwMap.set('last', payload)
+    }
+    quill.on('text-change', onTextChange as any)
+
+    // Agent-C: Offline Status Detection
+    const handleOnline = () => setIsBrowserOnline(true)
+    const handleOffline = () => setIsBrowserOnline(false)
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+
     return () => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+      quill.off('text-change', onTextChange as any)
+      lwwMap.unobserve(lwwObserver)
       binding.destroy()
       provider.destroy()
+      indexeddbProvider.destroy()
       ydoc.destroy()
     }
   }, [currentUser, docName])
+
+  const status = isBrowserOnline && wsStatus === 'connected' ? 'connected' : 'disconnected'
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-100">
@@ -173,7 +229,7 @@ const App: React.FC = () => {
             {status === 'connected' ? (
               <><Wifi size={18} className="mr-2" /> 在线</>
             ) : (
-              <><WifiOff size={18} className="mr-2" /> 离线</>
+              <><WifiOff size={18} className="mr-2" /> 离线模式</>
             )}
           </div>
         </div>
@@ -183,6 +239,7 @@ const App: React.FC = () => {
         <div className="bg-white border border-gray-200 shadow-md rounded-lg overflow-hidden flex flex-col h-[calc(100vh-120px)]">
           <div ref={editorRef} className="flex-1 overflow-y-auto" />
         </div>
+        <div className="mt-2 text-xs text-gray-400">{isSynced ? '已从本地恢复' : '本地恢复中'}</div>
       </main>
     </div>
   )
