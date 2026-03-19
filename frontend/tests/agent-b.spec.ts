@@ -1,10 +1,8 @@
 import { test, expect } from '@playwright/test';
 
 test.describe('Agent-B: 协作增强功能验证', () => {
-  const URL = 'http://localhost:5173/';
-
   test('Test-A2/A3: 格式应用验证', async ({ page }) => {
-    await page.goto(URL);
+    await page.goto(`/?doc=a23-${Date.now()}`);
     const editor = page.locator('.ql-editor');
     
     // 输入文本
@@ -45,13 +43,14 @@ test.describe('Agent-B: 协作增强功能验证', () => {
   });
 
   test('Test-B2: 光标位置同步显示', async ({ browser }) => {
+    const doc = `b2-${Date.now()}`
     const contextA = await browser.newContext();
     const contextB = await browser.newContext();
     const pageA = await contextA.newPage();
     const pageB = await contextB.newPage();
 
-    await pageA.goto(URL);
-    await pageB.goto(URL);
+    await pageA.goto(`/?doc=${doc}`);
+    await pageB.goto(`/?doc=${doc}`);
 
     // 等待 WebSocket 连接
     await pageA.waitForSelector('.lucide-wifi');
@@ -76,9 +75,10 @@ test.describe('Agent-B: 协作增强功能验证', () => {
   });
 
   test('Test-B4: 用户加入/离开通知', async ({ browser }) => {
+    const doc = `b4-${Date.now()}`
     const contextA = await browser.newContext();
     const pageA = await contextA.newPage();
-    await pageA.goto(URL);
+    await pageA.goto(`/?doc=${doc}`);
     await pageA.waitForSelector('.lucide-wifi');
 
     // 记录初始在线人数
@@ -92,7 +92,7 @@ test.describe('Agent-B: 协作增强功能验证', () => {
     // B 加入
     const contextB = await browser.newContext();
     const pageB = await contextB.newPage();
-    await pageB.goto(URL);
+    await pageB.goto(`/?doc=${doc}`);
     await pageB.waitForSelector('.lucide-wifi');
 
     // 等待通知
@@ -117,6 +117,7 @@ test.describe('Agent-B: 协作增强功能验证', () => {
 
   test('Test-B5: 三用户并发压力测试', async ({ browser }) => {
     test.setTimeout(60000); // 延长超时时间
+    const doc = `b5-${Date.now()}`
     
     const contextA = await browser.newContext();
     const contextB = await browser.newContext();
@@ -126,9 +127,9 @@ test.describe('Agent-B: 协作增强功能验证', () => {
     const pageB = await contextB.newPage();
     const pageC = await contextC.newPage();
 
-    await pageA.goto(URL);
-    await pageB.goto(URL);
-    await pageC.goto(URL);
+    await pageA.goto(`/?doc=${doc}`);
+    await pageB.goto(`/?doc=${doc}`);
+    await pageC.goto(`/?doc=${doc}`);
 
     // 清空编辑器
     await pageA.locator('.ql-editor').fill('');
