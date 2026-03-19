@@ -9,3 +9,25 @@
 body {
   @apply bg-gray-50;
 }
+
+/* 覆盖 Quill 编辑器的样式以适应满屏 */
+.ql-container {
+  font-size: 16px;
+}
+
+.ql-editor {
+  min-height: 500px;
+}
+
+/* 光标样式增强 */
+.ql-cursor-caret {
+  width: 2px !important;
+}
+
+.ql-cursor-flag {
+  font-size: 12px !important;
+  padding: 2px 6px !important;
+  border-radius: 4px !important;
+  margin-top: -20px !important;
+  white-space: nowrap;
+}

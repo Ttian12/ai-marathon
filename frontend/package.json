@@ -11,13 +11,16 @@
   },
   "dependencies": {
     "@playwright/test": "^1.58.2",
+    "@types/quill": "^2.0.14",
     "autoprefixer": "^10.4.27",
     "lucide-react": "^0.577.0",
     "postcss": "^8.5.8",
     "quill": "^2.0.3",
+    "quill-cursors": "^4.2.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "tailwindcss": "^4.2.2",
+    "y-protocols": "^1.0.7",
     "y-quill": "^1.0.0",
     "y-websocket": "^3.0.0",
     "yjs": "^13.6.30"
