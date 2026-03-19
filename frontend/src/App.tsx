@@ -5,7 +5,7 @@ import { IndexeddbPersistence } from 'y-indexeddb'
 import { QuillBinding } from 'y-quill'
 import Quill from 'quill'
 import 'quill/dist/quill.snow.css'
-import { Users, Wifi, WifiOff } from 'lucide-react'
+import { Users, Wifi, WifiOff, History, X, RotateCcw } from 'lucide-react'
 import QuillCursors from 'quill-cursors'
 
 Quill.register('modules/cursors', QuillCursors)
@@ -31,6 +31,9 @@ const App: React.FC = () => {
   const [isBrowserOnline, setIsBrowserOnline] = useState<boolean>(typeof navigator !== 'undefined' ? navigator.onLine : true)
   const [isSynced, setIsSynced] = useState<boolean>(false)
   const [notifications, setNotifications] = useState<Notification[]>([])
+  const [isHistoryOpen, setIsHistoryOpen] = useState<boolean>(false)
+  const [versions, setVersions] = useState<any[]>([])
+  const [isLoadingHistory, setIsLoadingHistory] = useState<boolean>(false)
   const prevClientsRef = useRef<Set<number>>(new Set())
 
   const docName = useMemo(() => {
@@ -43,6 +46,43 @@ const App: React.FC = () => {
       color: COLORS[Math.floor(Math.random() * COLORS.length)]
     }
   }, [])
+
+  const fetchVersions = async () => {
+    setIsLoadingHistory(true)
+    try {
+      const res = await fetch(`http://localhost:1234/api/versions/${docName}`)
+      const data = await res.json()
+      setVersions(Array.isArray(data) ? data : [])
+    } catch (err) {
+      console.error('Failed to fetch versions:', err)
+    } finally {
+      setIsLoadingHistory(false)
+    }
+  }
+
+  const handleRollback = async (id: number) => {
+    try {
+      const res = await fetch(`http://localhost:1234/api/rollback/${docName}/${id}`, {
+        method: 'POST'
+      })
+      if (res.ok) {
+        setIsHistoryOpen(false)
+        pushNotification('已成功回滚到历史版本')
+      } else {
+        alert('回滚失败')
+      }
+    } catch (err) {
+      console.error('Rollback error:', err)
+    }
+  }
+
+  const pushNotification = (msg: string) => {
+    const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`
+    setNotifications(prev => [...prev, { id, msg }])
+    window.setTimeout(() => {
+      setNotifications(prev => prev.filter(n => n.id !== id))
+    }, 3000)
+  }
 
   useEffect(() => {
     if (!editorRef.current) return
@@ -88,14 +128,6 @@ const App: React.FC = () => {
     ;(window as any).quill = quill
 
     const awareness = provider.awareness
-
-    const pushNotification = (msg: string) => {
-      const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`
-      setNotifications(prev => [...prev, { id, msg }])
-      window.setTimeout(() => {
-        setNotifications(prev => prev.filter(n => n.id !== id))
-      }, 3000)
-    }
 
     const syncPresence = () => {
       const states = awareness.getStates()
@@ -147,9 +179,15 @@ const App: React.FC = () => {
         parsed = null
       }
       if (!parsed || typeof parsed.ts !== 'number' || parsed.ts <= appliedTsRef.current) return
+      
+      const currentDelta = quill.getContents()
+      if (JSON.stringify(currentDelta) === JSON.stringify(parsed.delta)) return
+
       applyingLwwRef.current = true
       try {
-        quill.setContents(parsed.delta as any, 'api')
+        ydoc.transact(() => {
+          quill.setContents(parsed.delta as any, 'api')
+        })
         appliedTsRef.current = parsed.ts
       } finally {
         applyingLwwRef.current = false
@@ -160,17 +198,16 @@ const App: React.FC = () => {
     lwwMap.observe(lwwObserver)
     applyLww()
 
-    let lwwTimeout: number | null = null
+    let lwwTimeout: any = null
     const onTextChange = (_delta: unknown, _old: unknown, source: unknown) => {
       if (source !== 'user') return
       if (applyingLwwRef.current) return
       
-      // Debounce LWW update to allow CRDT to work for real-time typing
-      if (lwwTimeout) window.clearTimeout(lwwTimeout)
-      lwwTimeout = window.setTimeout(() => {
+      if (lwwTimeout) clearTimeout(lwwTimeout)
+      lwwTimeout = setTimeout(() => {
         const payload = JSON.stringify({ ts: Date.now(), delta: quill.getContents() })
         lwwMap.set('last', payload)
-      }, 1000)
+      }, 50)
     }
     quill.on('text-change', onTextChange as any)
 
@@ -230,6 +267,14 @@ const App: React.FC = () => {
             <span>在线: {onlineUsers}</span>
           </div>
 
+          <button 
+            onClick={() => { setIsHistoryOpen(true); fetchVersions(); }}
+            className="p-2 hover:bg-gray-100 rounded-full text-gray-600 transition-colors"
+            title="版本历史"
+          >
+            <History size={20} />
+          </button>
+          
           <div className="online-users-list hidden">
             {userList.map((user, idx) => (
               <span key={idx} className="online-user">
@@ -256,6 +301,57 @@ const App: React.FC = () => {
         </div>
         <div className="mt-2 text-xs text-gray-400">{isSynced ? '已从本地恢复' : '本地恢复中'}</div>
       </main>
+
+      {/* History Sidebar */}
+      {isHistoryOpen && (
+        <div className="fixed inset-0 z-[100] flex justify-end">
+          <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={() => setIsHistoryOpen(false)} />
+          <div className="relative w-80 bg-white shadow-2xl h-full flex flex-col border-l animate-in slide-in-from-right duration-300">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h2 className="font-bold text-lg flex items-center">
+                <History className="mr-2" size={20} /> 版本历史
+              </h2>
+              <button onClick={() => setIsHistoryOpen(false)} className="p-1 hover:bg-gray-100 rounded-full">
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto">
+              {isLoadingHistory ? (
+                <div className="flex justify-center p-8 text-gray-400">加载中...</div>
+              ) : versions.length === 0 ? (
+                <div className="flex justify-center p-8 text-gray-400">暂无历史版本</div>
+              ) : (
+                <div className="divide-y">
+                  {versions.map((v) => (
+                    <div key={v.id} className="p-4 hover:bg-gray-50 transition-colors group">
+                      <div className="flex justify-between items-start mb-1">
+                        <span className="text-sm font-medium text-gray-900">
+                          {new Date(v.timestamp).toLocaleString()}
+                        </span>
+                        <button 
+                          onClick={() => handleRollback(v.id)}
+                          className="opacity-0 group-hover:opacity-100 p-1 text-blue-600 hover:bg-blue-50 rounded transition-all flex items-center text-xs"
+                          title="回滚到此版本"
+                        >
+                          <RotateCcw size={14} className="mr-1" /> 回滚
+                        </button>
+                      </div>
+                      <p className="text-xs text-gray-500 line-clamp-2">
+                        {v.content || '(空内容)'}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            
+            <div className="p-4 bg-gray-50 text-[10px] text-gray-400 text-center">
+              系统将自动为您保存最近 50 个版本
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
