@@ -86,6 +86,9 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (!editorRef.current) return
+    
+    // Prevent multiple quill instances from being created
+    if (quillRef.current) return
 
     const ydoc = new Y.Doc()
     
@@ -220,12 +223,27 @@ const App: React.FC = () => {
     return () => {
       window.removeEventListener('online', handleOnline)
       window.removeEventListener('offline', handleOffline)
-      quill.off('text-change', onTextChange as any)
+      if (quill) {
+        quill.off('text-change', onTextChange as any)
+      }
       lwwMap.unobserve(lwwObserver)
       binding.destroy()
       provider.destroy()
       indexeddbProvider.destroy()
       ydoc.destroy()
+      
+      // Cleanup DOM
+      if (editorRef.current) {
+        editorRef.current.innerHTML = ''
+      }
+      
+      // Remove toolbar
+      const toolbar = document.querySelector('.ql-toolbar')
+      if (toolbar) {
+        toolbar.remove()
+      }
+      
+      quillRef.current = null
     }
   }, [currentUser, docName])
 
