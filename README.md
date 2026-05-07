@@ -1,6 +1,6 @@
 # 实时协作文档编辑器 (Realtime Collaborative Editor)
 
-本项目为“AI编程马拉松”参赛作品，旨在实现一个支持多人实时协作的富文本编辑器。项目核心解决了实时同步、冲突解决和离线支持等技术挑战。
+本项目旨在实现一个支持多人实时协作的富文本编辑器。项目核心解决了实时同步、冲突解决和离线支持等技术挑战。
 
 ## 一、技术栈
 
@@ -94,9 +94,7 @@ $env:CI="1"; npx playwright test --reporter=line
 │   ├── ...
 │   ├── session-20.md
 │   └── summary.md
-├── AI编程马拉松题目.md
 ├── AI协作记录规范参考.md
-├── AI比赛马拉松通知.md
 ├── AI-COLLABORATION-CONTEXT.md
 ├── DEVELOPMENT-PLAN.md
 ├── UNDERSTANDING-AGENT-B.md
@@ -104,9 +102,3 @@ $env:CI="1"; npx playwright test --reporter=line
 └── README.md           # 本说明文件
 ```
 
-## 七、题目与协作记录
-
-- 赛题要求参考：[AI编程马拉松题目.md](./AI编程马拉松题目.md)
-- AI 协作记录规范参考：[AI协作记录规范参考.md](./AI协作记录规范参考.md)
-- AI 协作会话记录目录：`ai-usage/`
-- 开发计划与上下文：`DEVELOPMENT-PLAN.md`、`AI-COLLABORATION-CONTEXT.md`
