@@ -110,7 +110,7 @@ const App: React.FC = () => {
     
     // Agent-C: IndexedDB Persistence
     const indexeddbProvider = new IndexeddbPersistence(docName, ydoc)
-    indexeddbProvider.on('synced', () => setIsSynced(true))
+    // 移除之前的直接设置 setIsSynced，统一移到下面处理
 
     const provider = new WebsocketProvider(
       wsOrigin,
@@ -187,27 +187,74 @@ const App: React.FC = () => {
     const lwwMap = ydoc.getMap('lww')
     const applyingLwwRef = { current: false }
     const appliedTsRef = { current: 0 }
+    
+    // 增加一个标记，防止在 IndexedDB 尚未同步完成时就处理 LWW，避免冲突
+    let indexedDbSynced = false
+    indexeddbProvider.on('synced', () => {
+      setIsSynced(true)
+      indexedDbSynced = true
+      // IndexedDB 恢复完成后，尝试发送自己的离线更新（如果有）
+      const lastLocalTs = Number(localStorage.getItem('lww_ts') || 0)
+      const lastLocalDelta = localStorage.getItem('lww_delta')
+      if (lastLocalTs > 0 && lastLocalDelta && lastLocalTs > appliedTsRef.current) {
+        const parsedDelta = JSON.parse(lastLocalDelta)
+        const currentDelta = quill.getContents()
+        
+        // 只有当本地离线内容确实比当前 ydoc 内容新且不同时，才发起宣告
+        if (JSON.stringify(currentDelta) !== JSON.stringify(parsedDelta)) {
+          lwwMap.set('last', JSON.stringify({
+            ts: lastLocalTs,
+            clientId: ydoc.clientID,
+            delta: parsedDelta
+          }))
+        }
+      }
+      applyLww()
+    })
 
     const applyLww = () => {
+      // 如果本地存储还没加载完，先不应用 LWW 避免冲突
+      if (!indexedDbSynced) return
+      
       const raw = lwwMap.get('last')
       if (typeof raw !== 'string') return
-      let parsed: { ts: number; delta: unknown } | null = null
+      let parsed: { ts: number; clientId: number; delta: unknown } | null = null
       try {
-        parsed = JSON.parse(raw) as { ts: number; delta: unknown }
+        parsed = JSON.parse(raw) as { ts: number; clientId: number; delta: unknown }
       } catch {
         parsed = null
       }
-      if (!parsed || typeof parsed.ts !== 'number' || parsed.ts <= appliedTsRef.current) return
       
+      if (!parsed || typeof parsed.ts !== 'number') return
+      
+      // 1. 如果收到的时间戳比本地已应用的小，说明是旧消息，忽略
+      if (parsed.ts < appliedTsRef.current) return
+      
+      // 2. 如果时间戳相等，根据 clientId 强制决定胜出者（保证分布式一致性，不冲突）
+      if (parsed.ts === appliedTsRef.current && parsed.clientId < ydoc.clientID) return
+
+      // 更新本地已应用的时间戳
+      appliedTsRef.current = parsed.ts
+
+      // 3. 核心修复：只有 LWW 的发起者（Winner）才负责将自己的内容同步到共享 Y.Text
+      // 其他客户端只需要更新自己的 appliedTsRef 即可，内容会通过 Yjs 正常的同步机制到达。
+      // 之前的代码在这里判断错误，导致了重复执行或者没人执行。
+      if (parsed.clientId !== ydoc.clientID) return
+
       const currentDelta = quill.getContents()
+      // 增加深度比较，如果内容已经一致，则不触发重置
       if (JSON.stringify(currentDelta) === JSON.stringify(parsed.delta)) return
 
       applyingLwwRef.current = true
       try {
+        // 胜出者强制重置共享状态
         ydoc.transact(() => {
+          const text = ydoc.getText('quill')
+          if (text.length > 0) {
+            text.delete(0, text.length)
+          }
           quill.setContents(parsed.delta as any, 'api')
         })
-        appliedTsRef.current = parsed.ts
       } finally {
         applyingLwwRef.current = false
       }
@@ -224,8 +271,21 @@ const App: React.FC = () => {
       
       if (lwwTimeout) clearTimeout(lwwTimeout)
       lwwTimeout = setTimeout(() => {
-        const payload = JSON.stringify({ ts: Date.now(), delta: quill.getContents() })
-        lwwMap.set('last', payload)
+        const ts = Date.now()
+        const delta = quill.getContents()
+        // 本地存储备份，用于离线恢复时比对
+        localStorage.setItem('lww_ts', ts.toString())
+        localStorage.setItem('lww_delta', JSON.stringify(delta))
+        
+        // 只有在线时才广播
+        if (wsStatus === 'connected' || navigator.onLine) {
+          const payload = JSON.stringify({ 
+            ts, 
+            clientId: ydoc.clientID,
+            delta 
+          })
+          lwwMap.set('last', payload)
+        }
       }, 50)
     }
     quill.on('text-change', onTextChange as any)

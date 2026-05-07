@@ -1,24 +1,74 @@
-# AI协作总结报告 - Agent-B
+# AI协作总结报告 - 实时协作文档编辑器项目组
 
 ## 概览统计
+
 | 统计项 | 数值 |
 |--------|------|
-| 总协作次数 | 1次 (含多次迭代) |
-| 总时长 | 30分钟 |
+| 总协作次数 | 8次 (Sessions) |
+| 总时长 | 约 2 小时 |
 | 使用工具 | Trae (Gemini 3.5 Flash) |
-| 涉及模块 | 前端UI、Quill、Yjs Awareness |
+| 涉及模块 | 前端UI、CRDT同步、WebSocket、离线支持、Git协作 |
 
 ## 按模块统计
+
 | 模块 | 协作次数 | 节省时间 | 主要用途 |
 |------|----------|----------|----------|
-| 富文本增强 | 1次 | 30分钟 | 完善格式同步、H1-H3 |
-| 协作 UI | 1次 | 60分钟 | 光标同步、在线列表、通知 |
+| 项目规划 | 3次 | 68分钟 | 建立并行协作模型与技术选型 |
+| Agent-A (核心同步) | 1次 | 78分钟 | 搭建骨架、Quill+Yjs集成 |
+| Agent-B (协作增强) | 1次 | 110分钟 | 光标同步、在线列表、格式增强 |
+| Agent-C (离线支持) | 1次 | 106分钟 | IndexedDB 持久化、LWW 策略 |
+| 集成与合并 | 2次 | 68分钟 | 解决 Git 冲突、CI 环境优化 |
+
+## 最佳提示词Top3
+
+### 1. 并行模式重构 (Session 06)
+> **成功要素**：明确指出当前计划的“串行阻塞”漏洞，要求 AI 将剩余任务重新拆分为三份，极大地提升了开发效率。
+
+### 2. 身份自识别指引 (Session 03)
+> **成功要素**：引导 AI 建立“接力棒”机制，通过 Git 分支和上下文文档让新介入的智能体能瞬间定位任务。
+
+### 3. 冲突解决与 CI 优化 (Session 07)
+> **成功要素**：在面对复杂的 Git 锁文件和 Playwright 报告阻塞时，能精准定位并提供 reporter 转换方案。
+
+## 常见问题与解决策略
+
+| 问题 | 出现次数 | 解决策略 |
+|--------|----------|----------|
+| Git index.lock 冲突 | 1次 | 等待其他智能体释放锁或手动清理锁文件 |
+| 端口占用冲突 | 2次 | 为不同 Agent 的 Worktree 分配独立端口 (5173/5175/1236) |
+| CI 测试卡死 | 1次 | 禁用 HTML Reporter，改用 line/list 模式 |
+| 上下文丢失风险 | 频繁 | 建立动态更新的 `AI-COLLABORATION-CONTEXT.md` |
+
+## 团队协作模式
+
+我们采用的 AI 协作模式：
+1. **分身并行**：利用 Git Worktree 开启三个物理隔离的工作区，分别由 Agent-A, B, C 负责不同功能类别。
+2. **测试驱动**：以题目给出的 20 项测试用例为唯一准则，通过后方可合并。
+3. **动态重组**：根据开发进度实时调整 Agent 的任务包，确保没有智能体处于闲置状态。
 
 ## 经验总结
+
 **最有效的做法：**
-- 将编辑器实例挂载到 `window` 以便在 Playwright 中通过 `page.evaluate` 调用 Quill 原生 API。
-- 利用 Yjs 的 `awareness.on('change', (changes) => { ... })` 详细处理 `added`, `updated`, `removed` 状态，实现实时用户通知。
+- **物理隔离**：Worktree 是多 Agent 协作的银弹，解决了文件冲突。
+- **口径统一**：将测试用例编号作为沟通语言（如“完成 Test-D2”），消除了理解偏差。
 
 **避免的陷阱：**
-- 注意 Vite 对现代 ESM 包（如 `quill-cursors`）的 `exports` 解析，导入 CSS 时应遵循其 `package.json` 定义。
-- Playwright 测试极细元素（如 1px 的光标）时，`toBeVisible` 可能因其无内容而失败，应改用 `toBeAttached` 或 `toBeVisible` 的宽松检查。
+- 避免长时间不合并，否则 `App.tsx` 等核心文件的冲突解决成本会呈指数级增长。
+- 必须强制要求 AI 在每个阶段更新 `TEST-RESULT.md`，否则进度难以量化。
+
+## 原始记录索引
+
+- [Session 01](./session-01.md) - 项目初始化与接力规划
+- [Session 02](./session-02.md) - 计划细化与 LWW 策略
+- [Session 03](./session-03.md) - 并行模型建立
+- [Session 04](./session-04.md) - Agent-A 骨架开发
+- [Session 05](./session-05.md) - 合并与交接
+- [Session 06](./session-06.md) - 并行任务重拆分
+- [Session 07](./session-07.md) - A/B 模块合并冲突解决
+- [Session 08](./session-08.md) - Agent-C 离线攻坚
+- [Session 15](./session-15.md) - 局域网访问支持
+- [Session 16](./session-16.md) - 离线重复内容初步修复
+- [Session 17](./session-17.md) - LWW 冲突仲裁优化 (clientId)
+- [Session 18](./session-18.md) - 多端竞争同步抑制
+- [Session 19](./session-19.md) - IndexedDB 时序竞争修复
+- [Session 20](./session-20.md) - 离线最终幂等性重构
